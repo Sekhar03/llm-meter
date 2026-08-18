@@ -3,6 +3,7 @@ import { getCurrentCapLike } from "../als";
 import type { LlmMeter } from "../meter";
 import { BaseProvider } from "./baseAdapter";
 import { meterStream } from "../stream";
+import { extractOpenAiText } from "../tokenEstimation";
 
 function isPromiseLike<T = unknown>(value: unknown): value is PromiseLike<T> {
   return typeof (value as any)?.then === "function";
@@ -34,6 +35,16 @@ class CompletionsWrapper {
   create(...args: any[]): any {
     const request = args.length === 1 && args[0] && typeof args[0] === "object" ? args[0] : { args };
     const isStreaming = (request as any)?.stream === true;
+
+    const activeLimit = getCurrentCapLike() as any;
+    if (activeLimit) {
+      const text = extractOpenAiText(request);
+      const estTokens = this._parent.tracker.estimateTokens
+        ? this._parent.tracker.estimateTokens(text)
+        : Math.ceil(text.length / 4);
+      const model = request.model || "unknown";
+      activeLimit.checkPreFlightLimits?.(estTokens, model);
+    }
 
     // Streaming responses: wrap AsyncIterable and record usage on completion (when available).
     // Note: caching is bypassed for streams because caches store fully materialized responses.

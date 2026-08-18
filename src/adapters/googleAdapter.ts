@@ -3,6 +3,7 @@ import { getCurrentCapLike } from "../als";
 import type { LlmMeter } from "../meter";
 import { BaseProvider } from "./baseAdapter";
 import { meterStream } from "../stream";
+import { extractGeminiText } from "../tokenEstimation";
 
 function isPromiseLike<T = unknown>(value: unknown): value is PromiseLike<T> {
   return typeof (value as any)?.then === "function";
@@ -61,6 +62,24 @@ function getModelFromRequest(args: any[]): string | undefined {
   return undefined;
 }
 
+function performGeminiPreFlightCheck(tracker: LlmMeter, args: any[]): void {
+  const activeLimit = getCurrentCapLike() as any;
+  if (activeLimit) {
+    let request: any = {};
+    if (args.length === 1 && args[0] && typeof args[0] === "object") {
+      request = args[0];
+    } else {
+      request = { args };
+    }
+    const text = extractGeminiText(request);
+    const estTokens = (tracker as any).estimateTokens
+      ? (tracker as any).estimateTokens(text)
+      : Math.ceil(text.length / 4);
+    const model = request.model ?? request.modelId ?? request.model_name ?? "unknown";
+    activeLimit.checkPreFlightLimits?.(estTokens, model);
+  }
+}
+
 class ModelsWrapper {
   private readonly _models: any;
   private readonly _parent: GeminiWrapper;
@@ -71,6 +90,7 @@ class ModelsWrapper {
   }
 
   generateContent(...args: any[]): any {
+    performGeminiPreFlightCheck(this._parent.tracker, args);
     const cache = this._parent.tracker.cacheStore?.();
     const request = args.length === 1 && args[0] && typeof args[0] === "object" ? args[0] : { args };
     const modelFromReq = getModelFromRequest(args);
@@ -117,6 +137,7 @@ class ModelsWrapper {
   }
 
   generateContentStream(...args: any[]): any {
+    performGeminiPreFlightCheck(this._parent.tracker, args);
     const modelFromReq = getModelFromRequest(args);
     const resp = this._models.generateContentStream?.apply(this._models, args);
     if (resp == null) return resp;
@@ -170,6 +191,7 @@ class GeminiWrapper extends BaseProvider<object> {
     // Also support "model object" shapes where generateContent exists directly.
     if (typeof (client as any).generateContent === "function") {
       this.generateContent = (...args: any[]) => {
+        performGeminiPreFlightCheck(this.tracker, args);
         const modelFromReq = getModelFromRequest(args);
         const resp = (client as any).generateContent.apply(client, args);
         if (isPromiseLike(resp)) {
@@ -181,6 +203,7 @@ class GeminiWrapper extends BaseProvider<object> {
 
     if (typeof (client as any).generateContentStream === "function") {
       this.generateContentStream = (...args: any[]) => {
+        performGeminiPreFlightCheck(this.tracker, args);
         const modelFromReq = getModelFromRequest(args);
         const resp = (client as any).generateContentStream.apply(client, args);
         const wrap = (stream: any) => {

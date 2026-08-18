@@ -59,6 +59,27 @@ export class SpendLimit {
     }
   }
 
+  checkPreFlightLimits(estimatedInputTokens: number, model: string): void {
+    const usage = this.currentUsage;
+    const estCost = (this.meter as any).computeCost
+      ? (this.meter as any).computeCost(model, estimatedInputTokens, 0)
+      : (estimatedInputTokens / 1000) * 0.0015;
+
+    if (this.maxCostUsd !== undefined && (usage.costUsd + estCost) > this.maxCostUsd) {
+      throw new CostLimitExceeded(
+        `Pre-flight spending cap exceeded: $${(usage.costUsd + estCost).toFixed(4)} > $${this.maxCostUsd.toFixed(4)}`,
+        { currentCost: usage.costUsd + estCost, maxCost: this.maxCostUsd }
+      );
+    }
+
+    if (this.maxTokens !== undefined && (usage.tokens + estimatedInputTokens) > this.maxTokens) {
+      throw new TokenCapExceeded(
+        `Pre-flight token cap exceeded: ${usage.tokens + estimatedInputTokens} > ${this.maxTokens}`,
+        { currentTokens: usage.tokens + estimatedInputTokens, maxTokens: this.maxTokens }
+      );
+    }
+  }
+
   /**
    * Run a function inside this spending scope. Limits are checked after the
    * function finishes (and also opportunistically by provider wrappers).

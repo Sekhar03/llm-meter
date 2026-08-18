@@ -107,6 +107,7 @@ export type LlmMeterOptions = (
     model: string,
     provider?: string
   ) => { inputPer1k: number; outputPer1k: number; cachedInputPer1k?: number } | undefined;
+  estimateTokens?: (text: string) => number;
 };
 
 export class LlmMeter {
@@ -118,10 +119,12 @@ export class LlmMeter {
     model: string,
     provider?: string
   ) => { inputPer1k: number; outputPer1k: number; cachedInputPer1k?: number } | undefined) | undefined;
+  readonly customTokenEstimator?: ((text: string) => number) | undefined;
 
 
   constructor(opts: LlmMeterOptions = {}) {
     this.rateResolver = opts.rateResolver;
+    this.customTokenEstimator = opts.estimateTokens;
     if (!("cache" in opts) || opts.cache == null) {
       this.cache = undefined;
     } else if (opts.cache === "memory") {
@@ -168,6 +171,11 @@ export class LlmMeter {
 
   cacheStore(): AnyCache | undefined {
     return this.cache;
+  }
+
+  estimateTokens(text: string): number {
+    if (this.customTokenEstimator) return this.customTokenEstimator(text);
+    return Math.ceil(text.length / 4);
   }
 
   computeCost(model: string, inputTokens: number, outputTokens: number, cachedTokens = 0): number {
