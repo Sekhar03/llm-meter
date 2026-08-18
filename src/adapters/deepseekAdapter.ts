@@ -13,13 +13,14 @@ function bindIfFunction<T>(value: T, thisArg: any): T {
   return value;
 }
 
-function extractDeepSeekUsage(response: any): { model: string; promptTokens: number; completionTokens: number } {
+function extractDeepSeekUsage(response: any): { model: string; promptTokens: number; completionTokens: number; cachedTokens: number } {
   // DeepSeek's API is OpenAI-compatible for chat completions.
   const model = response?.model ?? response?.data?.model ?? "unknown";
   const usage = response?.usage ?? response?.data?.usage;
   const promptTokens = usage?.prompt_tokens ?? usage?.promptTokens ?? 0;
   const completionTokens = usage?.completion_tokens ?? usage?.completionTokens ?? 0;
-  return { model, promptTokens, completionTokens };
+  const cachedTokens = usage?.prompt_cache_hit_tokens ?? usage?.promptCacheHitTokens ?? 0;
+  return { model, promptTokens, completionTokens, cachedTokens };
 }
 
 class CompletionsWrapper {
@@ -44,8 +45,8 @@ class CompletionsWrapper {
             ? meterStream(resolved, this._parent.tracker, {
                 provider: "deepseek",
                 extract: (chunk: any) => {
-                  const { model, promptTokens, completionTokens } = extractDeepSeekUsage(chunk);
-                  return { model, inputTokens: promptTokens, outputTokens: completionTokens };
+                  const { model, promptTokens, completionTokens, cachedTokens } = extractDeepSeekUsage(chunk);
+                  return { model, inputTokens: promptTokens, outputTokens: completionTokens, cachedTokens };
                 }
               })
             : this._parent._trackResponse(resolved, false))
@@ -55,8 +56,8 @@ class CompletionsWrapper {
         ? meterStream(resp, this._parent.tracker, {
             provider: "deepseek",
             extract: (chunk: any) => {
-              const { model, promptTokens, completionTokens } = extractDeepSeekUsage(chunk);
-              return { model, inputTokens: promptTokens, outputTokens: completionTokens };
+              const { model, promptTokens, completionTokens, cachedTokens } = extractDeepSeekUsage(chunk);
+              return { model, inputTokens: promptTokens, outputTokens: completionTokens, cachedTokens };
             }
           })
         : this._parent._trackResponse(resp, false);
@@ -137,17 +138,20 @@ class DeepSeekWrapper extends BaseProvider<object> {
   }
 
   _trackResponse(response: any, fromCache: boolean): any {
-    const { model, promptTokens, completionTokens } = extractDeepSeekUsage(response);
+    const { model, promptTokens, completionTokens, cachedTokens } = extractDeepSeekUsage(response);
 
     if (fromCache) {
-      const savedCostUsd = estimateCostUsd(model, promptTokens, completionTokens);
+      const savedCostUsd = (this.tracker as any).computeCost
+        ? (this.tracker as any).computeCost(model, promptTokens, completionTokens, cachedTokens)
+        : estimateCostUsd(model, promptTokens, completionTokens, cachedTokens);
       this.tracker.noteCacheHit?.(promptTokens + completionTokens, savedCostUsd);
     } else {
       this.tracker.record({
         model,
         inputTokens: promptTokens,
         outputTokens: completionTokens,
-        provider: "deepseek"
+        provider: "deepseek",
+        cachedTokens
       });
     }
 

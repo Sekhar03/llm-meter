@@ -6,6 +6,7 @@ export type ModelPricing = {
   inputPer1k: number;
   outputPer1k: number;
   provider: ProviderId;
+  cachedInputPer1k?: number;
 };
 
 // Pricing database (as of February 2026)
@@ -21,8 +22,8 @@ const PRICING_DB: Record<string, ModelPricing> = {
   "gpt-5-mini": { inputPer1k: 0.00025, outputPer1k: 0.002, provider: "openai" },
   // Widely used workhorses
   "gpt-4.1-mini": { inputPer1k: 0.0004, outputPer1k: 0.0016, provider: "openai" },
-  "gpt-4o": { inputPer1k: 0.0025, outputPer1k: 0.01, provider: "openai" },
-  "gpt-4o-mini": { inputPer1k: 0.00015, outputPer1k: 0.0006, provider: "openai" },
+  "gpt-4o": { inputPer1k: 0.0025, outputPer1k: 0.01, provider: "openai", cachedInputPer1k: 0.00125 },
+  "gpt-4o-mini": { inputPer1k: 0.00015, outputPer1k: 0.0006, provider: "openai", cachedInputPer1k: 0.000075 },
   // Reasoning / o-series (stable + widely used)
   o1: { inputPer1k: 0.015, outputPer1k: 0.06, provider: "openai" },
   o3: { inputPer1k: 0.002, outputPer1k: 0.008, provider: "openai" },
@@ -49,7 +50,7 @@ const PRICING_DB: Record<string, ModelPricing> = {
 
   // DeepSeek (OpenAI-compatible API)
   // Prices use the "cache miss" input rate + output rate (DeepSeek pricing varies with cache hits).
-  "deepseek-chat": { inputPer1k: 0.00027, outputPer1k: 0.0011, provider: "deepseek" },
+  "deepseek-chat": { inputPer1k: 0.00027, outputPer1k: 0.0011, provider: "deepseek", cachedInputPer1k: 0.00007 },
   "deepseek-reasoner": { inputPer1k: 0.00055, outputPer1k: 0.00219, provider: "deepseek" }
 };
 
@@ -109,10 +110,15 @@ export function listPricing(provider?: ProviderId): Record<string, ModelPricing>
   return out;
 }
 
-export function estimateCostUsd(model: string, inputTokens: number, outputTokens: number): number {
+export function estimateCostUsd(model: string, inputTokens: number, outputTokens: number, cachedTokens = 0): number {
   const price = pricingFor(model);
-  const inputCost = (inputTokens / 1000) * price.inputPer1k;
+  const cached = Math.min(inputTokens, Math.max(0, cachedTokens));
+  const uncachedInput = inputTokens - cached;
+  const cachedRate = price.cachedInputPer1k ?? price.inputPer1k;
+
+  const inputCost = (uncachedInput / 1000) * price.inputPer1k;
+  const cachedInputCost = (cached / 1000) * cachedRate;
   const outputCost = (outputTokens / 1000) * price.outputPer1k;
-  return inputCost + outputCost;
+  return inputCost + cachedInputCost + outputCost;
 }
 

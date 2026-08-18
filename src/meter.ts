@@ -79,9 +79,10 @@ export type MeterEvent = {
   inputTokens: number;
   outputTokens: number;
   provider: string;
+  cachedTokens?: number;
 };
 
-export type LlmMeterOptions =
+export type LlmMeterOptions = (
   | { cache?: undefined | null }
   | { cache: "memory" }
   | { cache: "disk"; cacheDir?: string }
@@ -100,15 +101,27 @@ export type LlmMeterOptions =
         ttlMs?: number;
       };
     }
-  | { cache: AnyCache };
+  | { cache: AnyCache }
+) & {
+  rateResolver?: (
+    model: string,
+    provider?: string
+  ) => { inputPer1k: number; outputPer1k: number; cachedInputPer1k?: number } | undefined;
+};
 
 export class LlmMeter {
   private usageState = new UsageCounter();
   private usageByProviderState = new Map<string, UsageCounter>();
   private cacheStatsState = new CacheCounter();
   private cache: AnyCache | undefined;
+  readonly rateResolver?: ((
+    model: string,
+    provider?: string
+  ) => { inputPer1k: number; outputPer1k: number; cachedInputPer1k?: number } | undefined) | undefined;
+
 
   constructor(opts: LlmMeterOptions = {}) {
+    this.rateResolver = opts.rateResolver;
     if (!("cache" in opts) || opts.cache == null) {
       this.cache = undefined;
     } else if (opts.cache === "memory") {
@@ -157,9 +170,26 @@ export class LlmMeter {
     return this.cache;
   }
 
+  computeCost(model: string, inputTokens: number, outputTokens: number, cachedTokens = 0): number {
+    if (this.rateResolver) {
+      const price = this.rateResolver(model);
+      if (price) {
+        const cached = Math.min(inputTokens, Math.max(0, cachedTokens));
+        const uncachedInput = inputTokens - cached;
+        const cachedRate = price.cachedInputPer1k ?? price.inputPer1k;
+        const inputCost = (uncachedInput / 1000) * price.inputPer1k;
+        const cachedInputCost = (cached / 1000) * cachedRate;
+        const outputCost = (outputTokens / 1000) * price.outputPer1k;
+        return inputCost + cachedInputCost + outputCost;
+      }
+    }
+    return estimateCostUsd(model, inputTokens, outputTokens, cachedTokens);
+  }
+
   record(params: MeterEvent): void {
     const totalTokens = params.inputTokens + params.outputTokens;
-    const cost = estimateCostUsd(params.model, params.inputTokens, params.outputTokens);
+    const cachedTokens = params.cachedTokens ?? 0;
+    const cost = this.computeCost(params.model, params.inputTokens, params.outputTokens, cachedTokens);
     const usage: UsageSummary = {
       tokens: totalTokens,
       inputTokens: params.inputTokens,

@@ -261,3 +261,65 @@ export class DiskCache<T = unknown> implements Cache<T> {
   }
 }
 
+export type RedisCacheOptions = {
+  client: any;
+  ttlMs?: number;
+  keyPrefix?: string;
+};
+
+export class RedisCache<T = unknown> implements AsyncCache<T> {
+  private client: any;
+  private ttlMs: number | undefined;
+  private prefix: string;
+
+  constructor(opts: RedisCacheOptions) {
+    this.client = opts.client;
+    this.ttlMs = opts.ttlMs;
+    this.prefix = opts.keyPrefix ?? "llm-meter:";
+  }
+
+  makeKey(request: CacheRequest): string {
+    return this.prefix + hashRequest(request);
+  }
+
+  async get(key: string): Promise<T | undefined> {
+    try {
+      const data = await this.client.get(key);
+      if (!data) return undefined;
+      return JSON.parse(data) as T;
+    } catch {
+      return undefined;
+    }
+  }
+
+  async set(key: string, value: T): Promise<void> {
+    try {
+      const serialized = JSON.stringify(value);
+      if (this.ttlMs !== undefined) {
+        await this.client.set(key, serialized, "PX", this.ttlMs);
+      } else {
+        await this.client.set(key, serialized);
+      }
+    } catch {
+      // ignore errors
+    }
+  }
+
+  async clear(): Promise<void> {
+    try {
+      let cursor = "0";
+      do {
+        const reply = await this.client.scan(cursor, "MATCH", `${this.prefix}*`, "COUNT", 100);
+        cursor = reply[0];
+        const keys = reply[1];
+        if (keys && keys.length > 0) {
+          await this.client.del(...keys);
+        }
+      } while (cursor !== "0");
+    } catch {
+      // ignore
+    }
+  }
+}
+
+
