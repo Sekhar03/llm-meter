@@ -25,7 +25,7 @@ test("improvements: RedisCache works", async () => {
 
   const cache = new RedisCache({ client: mockRedis, ttlMs: 1000 });
   const key = cache.makeKey({ prompt: "hello" });
-  
+
   await cache.set(key, { result: "world" });
   const val = await cache.get(key);
   assert.deepEqual(val, { result: "world" });
@@ -127,5 +127,6 @@ test("improvements: Express middleware", async () => {
 
   assert.ok(nextCalled);
   assert.equal(res.statusCode, 402);
-  assert.ok(res.body.message.includes("Spending cap exceeded"));
+  assert.equal(res.body.error, "BudgetLimitExceeded");
+  assert.equal(res.body.message, "LLM usage limit exceeded for this request.");
 });

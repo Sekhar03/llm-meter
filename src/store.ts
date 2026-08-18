@@ -150,7 +150,8 @@ export class DiskCache<T = unknown> implements Cache<T> {
   }
 
   private filePath(key: string): string {
-    return path.join(this.cacheDir, `${key}.bin`);
+    const safeKey = path.basename(key).replace(/[^a-z0-9_-]/gi, "");
+    return path.join(this.cacheDir, `${safeKey || "invalid"}.bin`);
   }
 
   private listCacheFiles(): string[] {

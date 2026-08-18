@@ -44,9 +44,10 @@ export function createExpressBudgetMiddleware(opts: ExpressBudgetMiddlewareOptio
         if (opts.onLimitExceeded) {
           opts.onLimitExceeded(err, req, res, next);
         } else {
+          // Generic client response — do not expose internal cap details or stack traces.
           res.status(402).json({
-            error: err.name || "BudgetLimitExceeded",
-            message: err.message || "LLM usage limit exceeded for this request."
+            error: "BudgetLimitExceeded",
+            message: "LLM usage limit exceeded for this request."
           });
         }
       });

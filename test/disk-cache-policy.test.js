@@ -12,7 +12,7 @@ function mkdtemp(prefix) {
 
 test("DiskCache: ttlMs expires by mtime (best-effort)", () => {
   const dir = mkdtemp("llm-meter-diskcache-");
-  const cache = new DiskCache({ cacheDir: dir, ttlMs: 10 });
+  const cache = new DiskCache({ cacheDir: dir, ttlMs: 5000 });
 
   cache.set("k", { v: 1 });
   const file = path.join(dir, "k.bin");

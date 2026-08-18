@@ -440,6 +440,32 @@ These are meant for reading/copying patterns into your app (they are not intende
 - **Amaresh Parida**: `https://amareshparida.com`
 - **Repository**: `https://github.com/amreshparida/llm-meter.git`
 
+## Security
+
+`llm-meter` is a library — it does not run a server, store user accounts, or manage API keys. Security responsibilities are shared between this library and the app that embeds it.
+
+### Secrets
+
+- **No secrets belong in source code.** Pass LLM provider keys via environment variables (for example `process.env.OPENAI_API_KEY`) in your application, not in this repo.
+- **`.env` is gitignored.** Use `.env.example` as a template; copy it to `.env` locally and never commit real values.
+- **Git history warning:** If an API key was ever committed to git (even briefly), assume it is compromised. Rotate it immediately in the provider dashboard — deleting the file does not remove it from history.
+
+### Cached LLM responses may contain sensitive data
+
+When caching is enabled, full SDK responses (including prompt text and model output) are stored in memory, on disk, or in Redis. Treat cache directories and Redis keys as **sensitive**:
+
+- Use a private `cacheDir` with restrictive filesystem permissions — not a world-readable shared temp directory in production.
+- Set TTL and entry limits (`maxEntries`, `ttlMs`) so data does not persist indefinitely.
+- Disk cache uses Node `v8.serialize` / `v8.deserialize`. Only read cache files you wrote yourself; a writable cache directory controlled by an attacker is a deserialization risk.
+
+### Express budget middleware is not authentication
+
+`createExpressBudgetMiddleware()` enforces per-request LLM spend caps only. It does **not** authenticate users. Mount your own auth middleware before it on every protected route.
+
+### Reporting exports
+
+`saveCsv`, `saveJson`, and `exportToPrometheus` write aggregate usage metrics (tokens, cost, provider names) — not prompt content. Ensure export file paths and Prometheus scrape endpoints are access-controlled in your deployment.
+
 ## License
 
 MIT (see [LICENSE](LICENSE))
